@@ -1,6 +1,7 @@
 package com.solventek;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.jsoup.Jsoup;
@@ -14,30 +15,31 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Component
-public class GetStockPriceHandler implements RequestHandler<Map<String, Object>, StockInfo> {
+public class GetStockPriceHandler implements RequestHandler<Map<String, Object>, Response> {
 
     @Override
-    public StockInfo handleRequest(Map<String, Object> input, Context context) {
+    public Response handleRequest(Map<String, Object> input, Context context) {
         StockInfo result = new StockInfo();
 
         // Log the input for debugging
         context.getLogger().log("Input: " + input);
 
+        // Extract the body from the input map
         String body = (String) input.get("body");
         Map<String, String> bodyMap;
-        
+
         try {
             ObjectMapper objectMapper = new ObjectMapper();
             bodyMap = objectMapper.readValue(body, Map.class);
         } catch (IOException e) {
             e.printStackTrace();
             result.setError("Error parsing input: " + e.getMessage());
-            return result;
+            return createErrorResponse(result);
         }
 
         if (bodyMap == null || !bodyMap.containsKey("symbol")) {
             result.setError("Invalid input: 'symbol' key is required");
-            return result;
+            return createErrorResponse(result);
         }
 
         String symbol = bodyMap.get("symbol");
@@ -92,8 +94,55 @@ public class GetStockPriceHandler implements RequestHandler<Map<String, Object>,
         } catch (IOException e) {
             e.printStackTrace();
             result.setError("Error fetching stock info: " + e.getMessage());
+            return createErrorResponse(result);
         }
 
-        return result;
+        // Create a successful response
+        return createSuccessResponse(result);
+    }
+
+    private Response createSuccessResponse(StockInfo stockInfo) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Content-Type", "application/json");
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            String body = objectMapper.writeValueAsString(stockInfo);
+            return new Response(200, headers, body);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return createErrorResponse("Error serializing response: " + e.getMessage());
+        }
+    }
+
+    private Response createErrorResponse(StockInfo stockInfo) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Content-Type", "application/json");
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            String body = objectMapper.writeValueAsString(stockInfo);
+            return new Response(500, headers, body);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return createErrorResponse("Error serializing error response: " + e.getMessage());
+        }
+    }
+
+    private Response createErrorResponse(String errorMessage) {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Content-Type", "application/json");
+
+        StockInfo errorInfo = new StockInfo();
+        errorInfo.setError(errorMessage);
+
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            String body = objectMapper.writeValueAsString(errorInfo);
+            return new Response(500, headers, body);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new Response(500, headers, "{\"error\":\"Unknown error\"}");
+        }
     }
 }
